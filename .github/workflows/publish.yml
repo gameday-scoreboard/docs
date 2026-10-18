@@ -7,12 +7,18 @@ name: Publish
 #
 # Runs every 15 minutes and skips when main hasn't moved since the last
 # publish: the deployed site carries main's commit in /version.txt, and the
-# check compares it with the live copy. A run by hand always publishes.
+# check compares it with the live copy. A run by hand always publishes, and
+# can publish another branch of the firmware repo for a while, with a
+# warning, since the live docs then describe that branch.
 
 on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch of the firmware repo to publish (main unless the live docs should describe another branch for a while)
+        default: main
 
 permissions:
   contents: read
@@ -39,11 +45,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FORCE: ${{ github.event_name == 'workflow_dispatch' }}
+          REF: ${{ inputs.ref || 'main' }}
         run: |
           set -euo pipefail
-          sha=$(gh api "repos/$SOURCE_REPO/commits/main" --jq .sha)
+          if [ "$REF" != main ]; then
+            echo "::warning::Publishing the firmware repo's $REF branch, not main, so the live docs describe that branch until the next publish of main."
+          fi
+          sha=$(gh api "repos/$SOURCE_REPO/commits/$REF" --jq .sha)
           live=$(curl -fsSL "$SITE/version.txt?run=$GITHUB_RUN_ID" 2>/dev/null || echo none)
-          echo "main is $sha, live is $live"
+          echo "$REF is $sha, live is $live"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           if [ "$FORCE" = true ] || [ "$live" != "$sha" ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"
